@@ -67,6 +67,13 @@ class TextToSpeechManager {
             return
         }
         _initState.value = InitState.Initializing
+
+        //
+        // FooTextToSpeech debug preferences...
+        //
+        //FooTextToSpeech.VERBOSE_LOG_SEQUENCE = false
+        FooTextToSpeech.VERBOSE_LOG_UTTERANCE = true
+
         val applicationContext = appContext!!
         if (!callbacksAttached) {
             callbacksAttached = true
