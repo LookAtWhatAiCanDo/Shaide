@@ -183,23 +183,58 @@ class FooTextToSpeechBuilder {
         return this
     }
 
+    var dedupe = true
+
     fun append(part: FooTextToSpeechPart): FooTextToSpeechBuilder {
         when (part) {
             is FooTextToSpeechPartSpeech ->
                 if (part.text.isNotBlank()) {
-                    parts.add(part)
+                    var add = true
+                    if (dedupe and parts.isNotEmpty()) {
+                        val last = parts.last()
+                        if (last is FooTextToSpeechPartSpeech) {
+                            add = part.text != last.text
+                        }
+                    }
+                    if (add) {
+                        parts.add(part)
+                    } else {
+                        FooLog.w(TAG, "append: duplicate text; ignoring")
+                    }
                 } else {
                     FooLog.w(TAG, "append: part.text.isBlank(); ignoring")
                 }
             is FooTextToSpeechPartSilence ->
                 if (part.durationMillis > 0) {
-                    parts.add(part)
+                    var add = true
+                    if (dedupe and parts.isNotEmpty()) {
+                        val last = parts.last()
+                        if (last is FooTextToSpeechPartSilence) {
+                            add = part.durationMillis != last.durationMillis
+                        }
+                    }
+                    if (add) {
+                        parts.add(part)
+                    } else {
+                        FooLog.w(TAG, "append: duplicate silence; ignoring")
+                    }
                 } else {
                     FooLog.w(TAG, "append: part.durationMillis <= 0; ignoring")
                 }
             is FooTextToSpeechPartEarcon ->
                 if (part.earcon.isNotBlank()) {
-                    parts.add(part)
+                    var add = true
+                    if (dedupe and parts.isNotEmpty()) {
+                        val last = parts.last()
+                        if (last is FooTextToSpeechPartEarcon) {
+                            add = part.earcon != last.earcon
+                        }
+                    }
+                    if (add) {
+                        parts.add(part)
+                    } else {
+                        FooLog.w(TAG, "append: duplicate earcon; ignoring")
+                    }
                 } else {
                     FooLog.w(TAG, "append: part.earcon.isBlank(); ignoring")
                 }

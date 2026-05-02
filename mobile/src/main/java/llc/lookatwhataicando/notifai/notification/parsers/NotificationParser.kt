@@ -45,6 +45,7 @@ abstract class NotificationParser(private val hashtag: String, protected val par
             val tickerText = notification.tickerText
             FooLog.v(TAG, "defaultOnNotificationPosted: tickerText=${FooString.quote(tickerText)}")
 
+            // Always add packageAppSpokenName (initializing builder.numberOfParts == 1)
             val builder = FooTextToSpeechBuilder(packageAppSpokenName!!)
 
             /*
@@ -139,6 +140,10 @@ abstract class NotificationParser(private val hashtag: String, protected val par
             }
 
             if (builder.numberOfParts == 1) {
+                //
+                // Found nothing in the above [currently commented out] bespoke parsing,
+                // so fall back to trying any generic content...
+                //
                 if (tickerText != null) {
                     builder.appendSilenceSentenceBreak()
                         .appendSpeech(tickerText.toString())
@@ -179,7 +184,12 @@ abstract class NotificationParser(private val hashtag: String, protected val par
                 }
             }
 
-            textToSpeechManager.speak(builder)
+            if (builder.numberOfParts > 1) {
+                textToSpeechManager.speak(builder)
+            } else {
+                FooLog.w(TAG, "defaultOnNotificationPosted: No notification parts found; ignoring")
+                return NotificationParseResult.ParsedIgnored
+            }
 
             return NotificationParseResult.DefaultWithTickerText
         }

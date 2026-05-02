@@ -1119,6 +1119,11 @@ class FooTextToSpeech private constructor() {
     //endregion enqueue internal
     //
 
+    var dedupe = true
+    private var lastText: String? = null
+    private var lastSilence: Int? = null
+    private var lastEarcon: String? = null
+
     private fun startNextLocked(): CleanupActions? {
         if (!isInitialized || currentUtterance != null) {
             return null
@@ -1136,6 +1141,31 @@ class FooTextToSpeech private constructor() {
 
         while (utteranceQueue.isNotEmpty()) {
             val next = utteranceQueue.removeFirst()
+            if (dedupe) {
+                when (next) {
+                    is Utterance.Text -> {
+                        if (next.text == lastText) {
+                            FooLog.w(TAG, "#TTS_UTTERANCE SPEAK startNextLocked: duplicate text; ignoring")
+                            continue
+                        }
+                        lastText = next.text
+                    }
+                    is Utterance.Silence -> {
+                        if (next.durationMillis == lastSilence) {
+                            FooLog.w(TAG, "#TTS_UTTERANCE SILENCE startNextLocked: duplicate silence; ignoring")
+                            continue
+                        }
+                        lastSilence = next.durationMillis
+                    }
+                    is Utterance.Earcon -> {
+                        if (next.earcon == lastEarcon) {
+                            FooLog.w(TAG, "#TTS_UTTERANCE EARCON startNextLocked: duplicate earcon; ignoring")
+                            continue
+                        }
+                        lastEarcon = next.earcon
+                    }
+                }
+            }
             if (next.requestAudioFocus) {
                 if (!audioFocusAcquireTry(audioAttributes)) {
                     /**
