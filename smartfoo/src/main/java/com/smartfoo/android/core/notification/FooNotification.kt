@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import com.smartfoo.android.core.FooReflection
 import com.smartfoo.android.core.FooString
 import com.smartfoo.android.core.logging.FooLog
+import com.smartfoo.android.core.platform.FooPlatformUtils.fromNotificationManager
 import kotlin.reflect.KClass
 import kotlin.text.substring
 
@@ -211,7 +212,8 @@ object FooNotification {
     @JvmStatic
     fun startActivityAppNotificationSettings(context: Context) =
         context.startActivity(intentAppNotificationSettings(context)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            .fromNotificationManager()
+        )
 
     @JvmStatic
     fun requestNotificationListenerUnbind(

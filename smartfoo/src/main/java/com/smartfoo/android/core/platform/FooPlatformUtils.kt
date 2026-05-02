@@ -61,9 +61,10 @@ object FooPlatformUtils {
      * ```
      * See:
      *  * [Package visibility in Android 11](https://medium.com/androiddevelopers/package-visibility-in-android-11-cc857f221cd9)
-     * "In rare cases, your app might need to query or interact with all installed apps on a device, independent of the components they contain. To allow your app to see all other installed apps, Android 11 introduces the QUERY_ALL_PACKAGES permission. In an upcoming Google Play policy update, look for guidelines for apps that need the QUERY_ALL_PACKAGES permission."
+     * "In rare cases, your app might need to query or interact with all installed apps on a device, independent of the components they contain.
+     * To allow your app to see all other installed apps, Android 11 introduces the QUERY_ALL_PACKAGES permission.
+     * In an upcoming Google Play policy update, look for guidelines for apps that need the QUERY_ALL_PACKAGES permission."
      *  * [Package visibility filtering on Android](https://developer.android.com/training/package-visibility)
-     *
      */
     @JvmOverloads
     @JvmStatic
@@ -297,15 +298,13 @@ object FooPlatformUtils {
      * May be unnecessary; [android.os.Bundle]`.toString` output seems almost acceptable nowadays.
      */
     @JvmStatic
-    fun toString(bundle: Bundle?): String {
+    fun toString(bundle: Bundle?, skipZeroFalseNullValues: Boolean = true): String {
         if (bundle == null) return "null"
-
-        val sb = StringBuilder()
 
         val keys = bundle.keySet()
         val it = keys.iterator()
 
-        sb.append('{')
+        val parts = mutableListOf<String>()
         while (it.hasNext()) {
             val key = it.next()
 
@@ -326,7 +325,11 @@ object FooPlatformUtils {
                     // Known issue if a Bundle (Parcelable) incorrectly implements writeToParcel
                     "[Error retrieving \"$key\" value: ${e.message}]"
                 }
+            if (skipZeroFalseNullValues && (value == 0 || value == false || value == null)) {
+                continue
+            }
 
+            val sb = StringBuilder()
             sb.append(FooString.quote(key)).append('=')
 
             if (key.lowercase(Locale.getDefault()).contains("password")) {
@@ -347,13 +350,9 @@ object FooPlatformUtils {
                 }
             }
 
-            if (it.hasNext()) {
-                sb.append(", ")
-            }
+            parts.add(sb.toString())
         }
-        sb.append('}')
-
-        return sb.toString()
+        return parts.joinToString(", ", "{ ", " }")
     }
 
     @JvmOverloads
@@ -495,15 +494,41 @@ object FooPlatformUtils {
         }
     }
 
+    /**
+     * Adds [android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP] and [android.content.Intent.FLAG_ACTIVITY_NEW_TASK] to the intent.
+     *
+     * From https://developer.android.com/reference/android/content/Intent#FLAG_ACTIVITY_CLEAR_TOP
+     * "If set, and the activity being launched is already running in the current task, then
+     * instead of launching a new instance of that activity, all of the other activities on
+     * top of it will be closed and this Intent will be delivered to the (now on top) old
+     * activity as a new Intent."
+     * ...
+     * "This launch mode can also be used to good effect in conjunction with FLAG_ACTIVITY_NEW_TASK:
+     * if used to start the root activity of a task, it will bring any currently running
+     * instance of that task to the foreground, and then clear it to its root state. This is
+     * especially useful, for example, when launching an activity from the notification manager."
+     */
+    @JvmStatic
+    fun Intent.fromNotificationManager(): Intent {
+        return this
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    @JvmStatic
+    fun intentShowAppSettings(context: Context) =
+        intentShowAppSettings(context.packageName)
+
+    @JvmStatic
+    fun intentShowAppSettings(packageName: String) =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            "package:$packageName".toUri())
+
     @JvmOverloads
     @JvmStatic
     fun showAppSettings(
         context: Context,
-        packageName: String? = context.packageName,
-    ) {
-        val uri = "package:$packageName".toUri()
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri)
-        startActivity(context, intent)
+        packageName: String = context.packageName) {
+        startActivity(context, intentShowAppSettings(packageName))
     }
 
     @JvmStatic
@@ -515,13 +540,25 @@ object FooPlatformUtils {
         }
     }
 
-    private fun intentAppNotificationSettings(ctx: Context) =
-        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
-        }
+    @JvmStatic
+    private fun intentAppNotificationSettings(context: Context) =
+        intentAppNotificationSettings(context.packageName)
 
     @JvmStatic
-    fun showAppNotificationSettings(ctx: Context) {
-        startActivity(ctx, intentAppNotificationSettings(ctx))
+    private fun intentAppNotificationSettings(packageName: String) =
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+
+    @JvmOverloads
+    @JvmStatic
+    fun showAppNotificationSettings(
+        context: Context,
+        packageName: String = context.packageName) {
+        startActivity(context, intentAppNotificationSettings(packageName))
     }
+
+    @JvmStatic
+    fun intentNotificationListenerSettings() =
+        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 }

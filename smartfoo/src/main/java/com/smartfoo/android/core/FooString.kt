@@ -429,7 +429,7 @@ object FooString {
     @JvmStatic
     fun <T> toString(
         items: Iterable<T?>?,
-        multiline: Boolean,
+        multiline: Boolean = false,
     ): String {
         val sb = StringBuilder()
 
