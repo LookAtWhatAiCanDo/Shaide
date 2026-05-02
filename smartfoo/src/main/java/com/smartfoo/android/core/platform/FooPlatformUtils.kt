@@ -589,4 +589,24 @@ object FooPlatformUtils {
         context: Context,
         serviceClass: Class<out AccessibilityService>) =
         showAccessibilityDetailsSettings(context, ComponentName(context, serviceClass))
+
+    @JvmStatic
+    fun isAccessibilityServiceEnabled(
+        context: Context,
+        componentName: ComponentName): Boolean {
+        val contentResolver = context.contentResolver
+        val enabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0)
+        if (enabled == 1) {
+            val flat = Settings.Secure.getString(contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            return flat?.contains(componentName.toString()) == true
+        }
+        return false
+    }
+
+    @JvmStatic
+    fun isAccessibilityServiceEnabled(
+        context: Context,
+        serviceClass: Class<out AccessibilityService>) =
+        isAccessibilityServiceEnabled(context, ComponentName(context, serviceClass))
 }
