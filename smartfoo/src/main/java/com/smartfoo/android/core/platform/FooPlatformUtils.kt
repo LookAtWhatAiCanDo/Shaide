@@ -1,5 +1,6 @@
 package com.smartfoo.android.core.platform
 
+import android.accessibilityservice.AccessibilityService
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
@@ -561,4 +562,31 @@ object FooPlatformUtils {
     @JvmStatic
     fun intentNotificationListenerSettings() =
         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+
+    /**
+     * Non-hidden duplicate of [Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS]
+     */
+    const val ACTION_ACCESSIBILITY_DETAILS_SETTINGS = "android.settings.ACCESSIBILITY_DETAILS_SETTINGS"
+
+    @JvmStatic
+    fun intentAccessibilityDetailsSettings(componentName: ComponentName) =
+        Intent(ACTION_ACCESSIBILITY_DETAILS_SETTINGS)
+            .putExtra(Intent.EXTRA_COMPONENT_NAME, componentName)
+
+    @JvmStatic
+    fun intentAccessibilityDetailsSettings(context: Context, serviceClass: Class<out AccessibilityService>) =
+        intentAccessibilityDetailsSettings(ComponentName(context, serviceClass))
+
+    @JvmStatic
+    fun showAccessibilityDetailsSettings(
+        context: Context,
+        componentName: ComponentName) {
+        startActivity(context, intentAccessibilityDetailsSettings(componentName))
+    }
+
+    @JvmStatic
+    fun showAccessibilityDetailsSettings(
+        context: Context,
+        serviceClass: Class<out AccessibilityService>) =
+        showAccessibilityDetailsSettings(context, ComponentName(context, serviceClass))
 }
