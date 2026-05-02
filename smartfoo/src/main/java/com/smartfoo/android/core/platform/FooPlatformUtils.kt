@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.service.quicksettings.TileService
+import androidx.annotation.RequiresPermission
 import androidx.core.net.toUri
 import com.smartfoo.android.core.FooReflection
 import com.smartfoo.android.core.FooString
@@ -563,6 +564,15 @@ object FooPlatformUtils {
     fun intentNotificationListenerSettings() =
         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 
+    @JvmStatic
+    fun intentAccessibilitySettings() =
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+
+    @JvmStatic
+    fun showAccessibilitySettings(context: Context) {
+        startActivity(context, intentAccessibilitySettings())
+    }
+
     /**
      * Non-hidden duplicate of [Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS]
      */
@@ -577,6 +587,11 @@ object FooPlatformUtils {
     fun intentAccessibilityDetailsSettings(context: Context, serviceClass: Class<out AccessibilityService>) =
         intentAccessibilityDetailsSettings(ComponentName(context, serviceClass))
 
+    /**
+     * Requires permission "android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"
+     * that is only granted to system apps. :/
+     */
+    @RequiresPermission("android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS")
     @JvmStatic
     fun showAccessibilityDetailsSettings(
         context: Context,
@@ -584,6 +599,11 @@ object FooPlatformUtils {
         startActivity(context, intentAccessibilityDetailsSettings(componentName))
     }
 
+    /**
+     * Requires permission "android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS"
+     * that is only granted to system apps. :/
+     */
+    @RequiresPermission("android.permission.OPEN_ACCESSIBILITY_DETAILS_SETTINGS")
     @JvmStatic
     fun showAccessibilityDetailsSettings(
         context: Context,
@@ -595,11 +615,13 @@ object FooPlatformUtils {
         context: Context,
         componentName: ComponentName): Boolean {
         val contentResolver = context.contentResolver
-        val enabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0)
+        val enabled = Settings.Secure.getInt(contentResolver,
+            Settings.Secure.ACCESSIBILITY_ENABLED, 0)
         if (enabled == 1) {
-            val flat = Settings.Secure.getString(contentResolver,
+            val enabledServices = Settings.Secure.getString(contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            return flat?.contains(componentName.toString()) == true
+            val componentNameFlattened = componentName.flattenToString()
+            return enabledServices?.contains(componentNameFlattened) == true
         }
         return false
     }
