@@ -13,6 +13,7 @@ import com.smartfoo.android.core.FooString
 import com.smartfoo.android.core.logging.FooLog
 import com.smartfoo.android.core.notification.FooNotification
 import llc.lookatwhataicando.notifai.notification.NotificationParserUtils
+import llc.lookatwhataicando.notifai.startup.Requirement
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParser
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParserAndroidMessages
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParserDiscord
@@ -63,6 +64,13 @@ class MyNotificationListenerService : NotificationListenerService() {
     }
 
     private val listenerManager = FooListenerAutoStartManager<NotificationParserServiceCallbacks>(this)
+
+    /**
+     * The system binds this service as soon as NOTIFICATION_LISTENER is granted, regardless of
+     * other requirements. Both onListenerConnected() and onNotificationPosted() check this before
+     * doing any work so the listener stays idle until the UI confirms everything is ready.
+     */
+    private fun areRequirementsMet() = Requirement.missing(this).isEmpty()
 
     private val notificationParsers = mutableMapOf<String, NotificationParser>()
 
@@ -141,6 +149,15 @@ class MyNotificationListenerService : NotificationListenerService() {
             FooLog.d(TAG, "#NOTIFICATION onListenerConnected()")
         }
         super.onListenerConnected()
+        if (!areRequirementsMet()) {
+            FooLog.d(TAG, "#NOTIFICATION onListenerConnected: requirements not met; unbinding until ready")
+            // Unbind so the system stops delivering notifications.
+            // OperationalScreen calls requestNotificationListenerRebind() once all requirements are met,
+            // at which point onListenerConnected fires again and initializeActiveNotifications()
+            // catches up via getActiveNotifications() — no notifications are permanently lost.
+            requestNotificationListenerUnbind(this)
+            return
+        }
         /*
         * Delay initialization to avoid system_server process binder transaction issues during the onListenerConnected callback:
         * ```
@@ -189,6 +206,11 @@ class MyNotificationListenerService : NotificationListenerService() {
 
         if (!isParserEnabled) {
             FooLog.v(TAG, "onNotificationPosted: isEnabled() == false; ignoring")
+            return
+        }
+
+        if (!areRequirementsMet()) {
+            FooLog.v(TAG, "onNotificationPosted: requirements not met; ignoring")
             return
         }
 

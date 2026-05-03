@@ -1,6 +1,7 @@
 package llc.lookatwhataicando.notifai.startup
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,16 +12,30 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import llc.lookatwhataicando.notifai.MyAccessibilityService
 import llc.lookatwhataicando.notifai.MyNotificationListenerService
 import com.smartfoo.android.core.notification.FooNotification
 import com.smartfoo.android.core.permission.FooPermission
+import com.smartfoo.android.core.platform.FooPlatformUtils
 
 /**
  * Requirement  = hard gate. App cannot function without these.
  */
 enum class Requirement {
     POST_NOTIFICATIONS,      // Runtime permission (API 33+ only)
-    NOTIFICATION_LISTENER    // Settings-mediated special access
+    NOTIFICATION_LISTENER,   // Settings-mediated special access
+    ACCESSIBILITY_SERVICE;   // Settings-mediated special access
+
+    companion object {
+        fun missing(context: Context): Set<Requirement> = buildSet {
+            if (!FooNotification.isPostNotificationsPermissionGranted(context))
+                add(POST_NOTIFICATIONS)
+            if (!MyNotificationListenerService.isNotificationListenerEnabled(context))
+                add(NOTIFICATION_LISTENER)
+            if (!FooPlatformUtils.isAccessibilityServiceEnabled(context, MyAccessibilityService::class.java))
+                add(ACCESSIBILITY_SERVICE)
+        }
+    }
 }
 
 /**
@@ -110,10 +125,7 @@ class StartupCoordinator(private val app: Application) : AndroidViewModel(app) {
      *  - After ListenerEnabledMonitor emits (via collect above)
      */
     fun recheck() {
-        val missing = buildSet {
-            if (!FooNotification.isPostNotificationsPermissionGranted(app)) add(Requirement.POST_NOTIFICATIONS)
-            if (!MyNotificationListenerService.isNotificationListenerEnabled(app)) add(Requirement.NOTIFICATION_LISTENER)
-        }
+        val missing = Requirement.missing(app)
 
         val advisories = buildSet {
             if (!FooPermission.isIgnoringBatteryOptimizations(app)) add(Advisory.BATTERY_OPTIMIZATION)
