@@ -24,7 +24,36 @@ import com.smartfoo.android.core.platform.FooPlatformUtils
 enum class Requirement {
     POST_NOTIFICATIONS,      // Runtime permission (API 33+ only)
     NOTIFICATION_LISTENER,   // Settings-mediated special access
-    ACCESSIBILITY_SERVICE;   // Settings-mediated special access
+
+    /**
+     * Settings-mediated special access.
+     *
+     * ## Why this is required
+     *
+     * **Live notifications** (arriving while the app is running) are handled entirely by
+     * [MyNotificationListenerService] (NLS). When an app like Google Chat posts a silent
+     * GROUP_SUMMARY followed by a content-bearing child notification, NLS sees both within
+     * milliseconds and the 300 ms cancellation window in [MyNotificationListenerService]
+     * ensures the content is spoken via the normal NLS path. No accessibility involvement.
+     *
+     * **Launch / catch-up** is where [MyAccessibilityService] becomes necessary. When the app
+     * starts and iterates [android.service.notification.NotificationListenerService.getActiveNotifications],
+     * the content-bearing child notifications may already be gone — only the empty GROUP_SUMMARY
+     * remains active. NLS cannot read its content. [MyAccessibilityService] opens the notification
+     * shade, expands collapsed rows, and reads the content via the accessibility tree.
+     *
+     * ## Secondary capability
+     *
+     * [MyAccessibilityService] also provides global navigation actions (open/dismiss shade,
+     * back, home, screenshot) that NLS does not have access to.
+     *
+     * ## Practical impact
+     *
+     * Without this permission the app still works correctly for all live notifications.
+     * Only the launch catch-up path for "obscured" notifications (see
+     * [llc.lookatwhataicando.notifai.notification.ObscuredNotification]) is degraded.
+     */
+    ACCESSIBILITY_SERVICE;
 
     companion object {
         fun missing(context: Context): Set<Requirement> = buildSet {

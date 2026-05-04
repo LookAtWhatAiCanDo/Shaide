@@ -14,5 +14,11 @@
 
     <string name="unknown">Unknown</string>
 
-    <string name="accessibility_service_description">NotifAI Notification Reader</string>
+    <!--
+    Shown to the user in Android Settings > Accessibility > NotifAI.
+    Keep concise; explain both capabilities so the user understands the scope.
+    -->
+    <string name="accessibility_service_description">Reads notification content from the shade
+        when NotifAI launches, to catch up on notifications that arrived before the app started.
+        Also enables shade open/dismiss and navigation controls used during voice readback.</string>
 </resources>

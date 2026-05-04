@@ -1,10 +1,13 @@
 package llc.lookatwhataicando.notifai
 
+import android.accessibilityservice.AccessibilityService
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.os.UserHandle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -12,11 +15,17 @@ import com.smartfoo.android.core.FooListenerAutoStartManager
 import com.smartfoo.android.core.FooString
 import com.smartfoo.android.core.logging.FooLog
 import com.smartfoo.android.core.notification.FooNotification
+import com.smartfoo.android.core.platform.FooPlatformUtils
+import com.smartfoo.android.core.texttospeech.FooTextToSpeechBuilder
 import llc.lookatwhataicando.notifai.notification.NotificationParserUtils
+import llc.lookatwhataicando.notifai.notification.ObscuredNotification
+import llc.lookatwhataicando.notifai.notification.ObscuredNotificationLogger
+import llc.lookatwhataicando.notifai.notification.ResolutionOutcome
 import llc.lookatwhataicando.notifai.startup.Requirement
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParser
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParserAndroidMessages
 import llc.lookatwhataicando.notifai.notification.parsers.NotificationParserDiscord
+import java.util.concurrent.ConcurrentHashMap
 
 class MyNotificationListenerService : NotificationListenerService() {
     companion object {
@@ -24,6 +33,9 @@ class MyNotificationListenerService : NotificationListenerService() {
 
         @Suppress("SimplifyBooleanWithConstants", "KotlinConstantConditions", "RedundantSuppression", "UNREACHABLE_CODE")
         private val LOG_NOTIFICATION = true && BuildConfig.DEBUG
+
+        /** Window for sibling (child) notifications to arrive and cancel the accessibility lookup. */
+        private const val PENDING_LOOKUP_DELAY_MS = 300L
 
         fun isNotificationListenerEnabled(context: Context) =
             FooNotification.isNotificationListenerEnabled(context, MyNotificationListenerService::class)
@@ -227,7 +239,106 @@ class MyNotificationListenerService : NotificationListenerService() {
         when (result) {
             NotificationParser.NotificationParseResult.Unparsable ->
                 FooLog.w(TAG, "onNotificationPosted: Unparsable StatusBarNotification")
-            else -> {}
+            NotificationParser.NotificationParseResult.ParsedIgnored -> {
+                // Content was not readable via NLS — schedule a deferred accessibility lookup
+                // in case the content is visible in the notification shade.
+                schedulePendingLookup(sbn)
+            }
+            else -> {
+                // Content arrived via NLS — cancel any pending accessibility lookup for this package.
+                cancelPendingLookup(packageName)
+            }
+        }
+    }
+
+    /** Pending accessibility lookups keyed by packageName. Runnables fire after PENDING_LOOKUP_DELAY_MS. */
+    private val pendingLookups = ConcurrentHashMap<String, Runnable>()
+
+    private fun schedulePendingLookup(sbn: StatusBarNotification) {
+        val packageName = sbn.packageName
+        // Cancel any existing pending lookup for this package (e.g. rapid repost).
+        cancelPendingLookup(packageName)
+
+        val appLabel = FooPlatformUtils.getApplicationName(this, packageName) ?: packageName
+        FooLog.d(TAG, "schedulePendingLookup: packageName=$packageName appLabel=$appLabel delay=${PENDING_LOOKUP_DELAY_MS}ms")
+
+        val runnable = Runnable {
+            pendingLookups.remove(packageName)
+            val accessibility = MyAccessibilityService.instance
+            if (accessibility == null) {
+                FooLog.w(TAG, "schedulePendingLookup: accessibility unavailable for $packageName")
+                ObscuredNotificationLogger.log(
+                    ObscuredNotification(
+                        packageName        = packageName,
+                        appLabel           = appLabel,
+                        notificationFlags  = sbn.notification.flags,
+                        postedAtMs         = sbn.postTime,
+                        resolutionOutcome  = ResolutionOutcome.ACCESSIBILITY_UNAVAILABLE,
+                    )
+                )
+                return@Runnable
+            }
+            if (MyAccessibilityService.DEBUG_FULL_SCAN_MODE) {
+                accessibility.debugFullShadeScan()
+                return@Runnable
+            }
+            accessibility.findRowForAppLabel(
+                appLabel         = appLabel,
+                shadeAlreadyOpen = false,
+                callback         = { rows ->
+                    val outcome = if (!rows.isNullOrEmpty()) ResolutionOutcome.FOUND else ResolutionOutcome.NOT_FOUND
+                    ObscuredNotificationLogger.log(
+                        ObscuredNotification(
+                            packageName       = packageName,
+                            appLabel          = appLabel,
+                            notificationFlags = sbn.notification.flags,
+                            postedAtMs        = sbn.postTime,
+                            resolutionOutcome = outcome,
+                        )
+                    )
+                    if (!rows.isNullOrEmpty()) {
+                        speakShadeRows(appLabel, rows)
+                    } else {
+                        FooLog.i(TAG, "schedulePendingLookup: no shade rows found for $appLabel")
+                    }
+                }
+            )
+        }
+
+        pendingLookups[packageName] = runnable
+        handler.postDelayed(runnable, PENDING_LOOKUP_DELAY_MS)
+        // Live vs. launch behavior:
+        //   Live  — apps like Google Chat post GROUP_SUMMARY then a content-bearing child
+        //           within milliseconds. The child arrives at onNotificationPosted and hits
+        //           the `else` branch above, cancelling this runnable before it fires.
+        //           MyAccessibilityService is NOT involved for live notifications.
+        //   Launch — initializeActiveNotifications iterates getActiveNotifications(). The
+        //           content-bearing child may already be gone; only GROUP_SUMMARY is active.
+        //           No cancel arrives → this runnable fires → MyAccessibilityService opens
+        //           the shade and reads the row. This is the primary reason the Accessibility
+        //           permission is required.
+    }
+
+    private fun cancelPendingLookup(packageName: String) {
+        val runnable = pendingLookups.remove(packageName) ?: return
+        handler.removeCallbacks(runnable)
+        FooLog.d(TAG, "cancelPendingLookup: cancelled pending accessibility lookup for $packageName")
+    }
+
+    private fun speakShadeRows(appLabel: String, rows: List<MyAccessibilityService.ShadeRow>) {
+        val builder = FooTextToSpeechBuilder(appLabel)
+        for (row in rows) {
+            row.title?.let { builder.appendSilenceWordBreak(); builder.appendSpeech(it) }
+            if (row.messages.isNotEmpty()) {
+                row.messages.forEach { builder.appendSilenceWordBreak(); builder.appendSpeech(it) }
+            } else {
+                row.text?.let { builder.appendSilenceWordBreak(); builder.appendSpeech(it) }
+            }
+        }
+        if (builder.numberOfParts > 1) {
+            parserCallbacks.textToSpeech.speak(builder)
+        } else {
+            FooLog.w(TAG, "speakShadeRows: shade rows for $appLabel have no speakable content: $rows")
         }
     }
 

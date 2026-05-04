@@ -169,7 +169,7 @@ object FooNotification {
     ): Boolean {
         val notificationListenerServiceLookingFor =
             ComponentName(context, notificationListenerServiceClass)
-        FooLog.d(TAG, "isNotificationListenerEnabled: notificationListenerServiceLookingFor=$notificationListenerServiceLookingFor")
+        //FooLog.d(TAG, "isNotificationListenerEnabled: notificationListenerServiceLookingFor=$notificationListenerServiceLookingFor")
 
         val notificationListenersString =
             Settings.Secure.getString(context.contentResolver, ENABLED_NOTIFICATION_LISTENERS)
@@ -177,9 +177,9 @@ object FooNotification {
             val notificationListeners = notificationListenersString.split(':').dropLastWhile { it.isEmpty() }.toTypedArray()
             for (i in notificationListeners.indices) {
                 val notificationListener = ComponentName.unflattenFromString(notificationListeners[i])
-                FooLog.d(TAG, "isNotificationListenerEnabled: notificationListeners[$i]=$notificationListener")
+                //FooLog.d(TAG, "isNotificationListenerEnabled: notificationListeners[$i]=$notificationListener")
                 if (notificationListenerServiceLookingFor == notificationListener) {
-                    FooLog.i(TAG, "isNotificationListenerEnabled: found match; return true")
+                    //FooLog.i(TAG, "isNotificationListenerEnabled: found match; return true")
                     return true
                 }
             }
