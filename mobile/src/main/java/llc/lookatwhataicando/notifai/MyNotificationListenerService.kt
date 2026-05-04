@@ -242,7 +242,7 @@ class MyNotificationListenerService : NotificationListenerService() {
         when (result) {
             NotificationParser.NotificationParseResult.Unparsable ->
                 FooLog.w(TAG, "onNotificationPosted: Unparsable StatusBarNotification")
-            NotificationParser.NotificationParseResult.ParsedIgnored -> {
+            NotificationParser.NotificationParseResult.ParsedEmpty -> {
                 // Content was not readable via NLS — schedule a deferred accessibility lookup
                 // in case the content is visible in the notification shade.
                 schedulePendingLookup(sbn)
