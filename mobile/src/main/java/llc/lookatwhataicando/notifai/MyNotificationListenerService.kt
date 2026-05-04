@@ -52,6 +52,7 @@ class MyNotificationListenerService : NotificationListenerService() {
         fun requestNotificationListenerUnbind(context: Context) {
             FooNotification.requestNotificationListenerUnbind(context, MyNotificationListenerService::class)
         }
+    }
 
     interface NotificationParserServiceCallbacks {
         fun onNotificationParsed(parser: NotificationParser)
@@ -325,7 +326,7 @@ class MyNotificationListenerService : NotificationListenerService() {
         FooLog.d(TAG, "cancelPendingLookup: cancelled pending accessibility lookup for $packageName")
     }
 
-    private fun speakShadeRows(appLabel: String, rows: List<MyAccessibilityService.ShadeRow>) {
+    private fun speakShadeRows(appLabel: String, rows: List<ShadeRow>) {
         val builder = FooTextToSpeechBuilder(appLabel)
         for (row in rows) {
             row.title?.let { builder.appendSilenceWordBreak(); builder.appendSpeech(it) }
