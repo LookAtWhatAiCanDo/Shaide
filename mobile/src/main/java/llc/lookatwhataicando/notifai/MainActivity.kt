@@ -305,8 +305,10 @@ fun PermissionsGateScreen(
         RequirementCard(
             icon        = Icons.Outlined.Lock,
             title       = "Accessibility Service",
-            description = "Required to read notification content from apps that don't " +
-                    "expose it via standard APIs (e.g. Google Chat). " +
+            description = "Required for all notification processing. Without this, no " +
+                    "notifications are spoken — not live arrivals, nor launch catch-up. " +
+                    "Also enables reading content from apps like Google Chat that don't " +
+                    "expose it via standard APIs. " +
                     "Enable `NotifAI` in the Accessibility settings that open.",
             isMissing   = accessibilityMissing,
             primaryAction = if (accessibilityMissing) PermissionAction(

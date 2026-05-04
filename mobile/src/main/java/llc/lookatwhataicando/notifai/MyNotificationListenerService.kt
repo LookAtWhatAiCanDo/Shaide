@@ -77,9 +77,15 @@ class MyNotificationListenerService : NotificationListenerService() {
     private val listenerManager = FooListenerAutoStartManager<NotificationParserServiceCallbacks>(this)
 
     /**
+     * Returns true only when every hard [Requirement] — including POST_NOTIFICATIONS,
+     * NOTIFICATION_LISTENER, and ACCESSIBILITY_SERVICE — is satisfied.
+     *
      * The system binds this service as soon as NOTIFICATION_LISTENER is granted, regardless of
-     * other requirements. Both onListenerConnected() and onNotificationPosted() check this before
-     * doing any work so the listener stays idle until the UI confirms everything is ready.
+     * other requirements. Both [onListenerConnected] and [onNotificationPosted] check this before
+     * doing any work, so the listener stays completely idle — no live notifications are spoken and
+     * no launch catch-up occurs — until Accessibility (and all other requirements) are also
+     * granted. This is intentional: the accessibility fallback path is required for correct
+     * startup behaviour, so there is no partial mode to offer.
      */
     private fun areRequirementsMet() = Requirement.missing(this).isEmpty()
 

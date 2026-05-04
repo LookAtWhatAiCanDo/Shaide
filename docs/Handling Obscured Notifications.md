@@ -25,7 +25,10 @@ child notifications (e.g. `CHAT_CHIME`, `MessagingStyle`) within milliseconds. N
 The 300 ms `PENDING_LOOKUP_DELAY_MS` cancellation window in `schedulePendingLookup` gives the
 content-bearing child time to arrive and cancel the accessibility lookup before it fires.
 
-Result: **the normal NLS path speaks the content; no accessibility service involvement.**
+Result: **the normal NLS path speaks the content; the accessibility tree is not consulted for the
+content itself.** Note: `MyAccessibilityService` must still be enabled — it is a hard requirement
+that gates all NLS processing, including live notifications (see
+[Requirement.ACCESSIBILITY_SERVICE] in `StartupCoordinator.kt`).
 
 **Behavior during stale catch-up (app just started):**
 When the app restarts and `initializeActiveNotifications` calls `getActiveNotifications()`, the

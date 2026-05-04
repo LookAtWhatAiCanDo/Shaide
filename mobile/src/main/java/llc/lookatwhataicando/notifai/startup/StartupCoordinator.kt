@@ -49,9 +49,10 @@ enum class Requirement {
      *
      * ## Practical impact
      *
-     * Without this permission the app still works correctly for all live notifications.
-     * Only the launch catch-up path for "obscured" notifications (see
-     * [llc.lookatwhataicando.notifai.notification.ObscuredNotification]) is degraded.
+     * This is a **hard requirement**. [MyNotificationListenerService.areRequirementsMet] gates all
+     * NLS processing on every [Requirement] being satisfied, including this one. Without
+     * Accessibility the NLS stays idle: no live notifications are spoken and no launch catch-up
+     * occurs. The UI reflects this by blocking the operational screen until this is granted.
      */
     ACCESSIBILITY_SERVICE;
 
