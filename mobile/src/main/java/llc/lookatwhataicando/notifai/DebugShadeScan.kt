@@ -6,15 +6,12 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.smartfoo.android.core.logging.FooLog
 import llc.lookatwhataicando.notifai.DebugShadeScan.Companion.EXPAND_SETTLE_MS
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.ShadeRow
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.getLiveContainerNode
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.getLiveRowNodes
 
 /**
  * Full top-to-bottom shade scan used when [MyAccessibilityService.DEBUG_FULL_SCAN_MODE] is true.
  *
  * Opens the shade, expands every collapsed row one at a time (with a settle delay between each),
- * scrolls to reveal off-screen rows, and logs every [ShadeRow] found. No app-label matching;
+ * scrolls to reveal off-screen rows, and logs every [NotificationShadeSnapshot.ShadeRow] found. No app-label matching;
  * no TTS. Guarded by [active] so concurrent triggers are ignored.
  *
  * Disable [MyAccessibilityService.DEBUG_FULL_SCAN_MODE] when switching back to the normal
@@ -23,7 +20,7 @@ import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.getLiveRowNodes
 internal class DebugShadeScan(
     private val delays: ShadeDelays,
     private val getWindows: () -> List<AccessibilityWindowInfo>?,
-    private val getLastSnapshot: () -> List<ShadeRow>,
+    private val getLastSnapshot: () -> List<NotificationShadeSnapshot.ShadeRow>,
     private val openShade: () -> Unit,
     private val closeShade: () -> Unit,
 ) {
@@ -65,11 +62,11 @@ internal class DebugShadeScan(
      * Guarded by [expandPassesLeft] to prevent an unbounded loop.
      */
     private fun debugScanPass(
-        accumulated: LinkedHashSet<ShadeRow>,
+        accumulated: LinkedHashSet<NotificationShadeSnapshot.ShadeRow>,
         scrollAttemptsLeft: Int,
         expandPassesLeft: Int,
     ) {
-        val rows = getLiveRowNodes(getWindows())
+        val rows = NotificationShadeSnapshot.getLiveRowNodes(getWindows())
         FooLog.v(TAG, "debugScanPass: ${rows.size} rows visible (expandPassesLeft=$expandPassesLeft)")
         rows.forEachIndexed { _, rowNode ->
             if (rowNode.actionList.any { it.id == AccessibilityNodeInfo.ACTION_COLLAPSE }) return@forEachIndexed
@@ -91,13 +88,13 @@ internal class DebugShadeScan(
     }
 
     /** Snapshot current rows, merge into [accumulated], then attempt a scroll. */
-    private fun debugScanCollect(accumulated: LinkedHashSet<ShadeRow>, scrollAttemptsLeft: Int) {
+    private fun debugScanCollect(accumulated: LinkedHashSet<NotificationShadeSnapshot.ShadeRow>, scrollAttemptsLeft: Int) {
         val snapshot = getLastSnapshot()
         val sb = StringBuilder("debugScanCollect: ${snapshot.size} rows in snapshot:")
         snapshot.forEachIndexed { i, row -> sb.append("\n  [$i] $row") }
         FooLog.i(TAG, sb.toString())
         accumulated.addAll(snapshot.filter { !it.isEmpty })
-        val rowCountBeforeScroll = getLiveRowNodes(getWindows()).size
+        val rowCountBeforeScroll = NotificationShadeSnapshot.getLiveRowNodes(getWindows()).size
         debugScanScroll(accumulated, scrollAttemptsLeft, rowCountBeforeScroll)
     }
 
@@ -106,7 +103,7 @@ internal class DebugShadeScan(
      * settle, compare row count: if new rows appeared, continue scanning; otherwise finish.
      */
     private fun debugScanScroll(
-        accumulated: LinkedHashSet<ShadeRow>,
+        accumulated: LinkedHashSet<NotificationShadeSnapshot.ShadeRow>,
         scrollAttemptsLeft: Int,
         rowCountBefore: Int,
     ) {
@@ -115,7 +112,7 @@ internal class DebugShadeScan(
             debugScanFinish(accumulated)
             return
         }
-        val container = getLiveContainerNode(getWindows())
+        val container = NotificationShadeSnapshot.getLiveContainerNode(getWindows())
         if (container == null) {
             FooLog.w(TAG, "debugScanScroll: container not found")
             debugScanFinish(accumulated)
@@ -129,7 +126,7 @@ internal class DebugShadeScan(
             return
         }
         mainHandler.postDelayed({
-            val rowCountAfter = getLiveRowNodes(getWindows()).size
+            val rowCountAfter = NotificationShadeSnapshot.getLiveRowNodes(getWindows()).size
             if (rowCountAfter <= rowCountBefore) {
                 FooLog.i(TAG, "debugScanScroll: no new rows after scroll ($rowCountBefore → $rowCountAfter) — at bottom")
                 debugScanFinish(accumulated)
@@ -141,7 +138,7 @@ internal class DebugShadeScan(
     }
 
     /** Log the deduplicated corpus then close the shade after the observation delay. */
-    private fun debugScanFinish(accumulated: LinkedHashSet<ShadeRow>) {
+    private fun debugScanFinish(accumulated: LinkedHashSet<NotificationShadeSnapshot.ShadeRow>) {
         val rows = accumulated.toList()
         val sb = StringBuilder("debugScanFinish: complete corpus (${rows.size} rows):")
         rows.forEachIndexed { i, row -> sb.append("\n  [$i] $row") }

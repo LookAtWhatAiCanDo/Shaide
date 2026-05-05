@@ -18,7 +18,7 @@ data class ShadeDelays(
     val preClose: Long,
 ) {
     companion object {
-        val FAST = ShadeDelays(shadeSettle = 600L,  preExpand = 0L,    scrollSettle = 0L,    preClose = 0L)
-        val SLOW = ShadeDelays(shadeSettle = 3000L, preExpand = 2000L, scrollSettle = 1500L, preClose = 4000L)
+        val FAST = ShadeDelays(shadeSettle = 200L, preExpand = 50L, scrollSettle = 50L,  preClose = 50L)
+        val SLOW = ShadeDelays(shadeSettle = 2000L, preExpand = 1000L, scrollSettle = 1500L, preClose = 4000L)
     }
 }

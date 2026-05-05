@@ -181,13 +181,14 @@ abstract class NotificationParser(private val hashtag: String, protected val par
             // TODO: Clean up this ugly logic...
 
             if (textToSpeechManager == null) {
+                FooLog.w(TAG, "defaultOnNotificationPosted: textToSpeechManager == null; ignore and return ParsedIgnored")
                 return NotificationParseResult.ParsedIgnored
             }
 
             if (builder.numberOfParts > 1) {
                 textToSpeechManager.speak(builder)
             } else {
-                FooLog.w(TAG, "defaultOnNotificationPosted: No notification parts found; ignoring")
+                FooLog.w(TAG, "defaultOnNotificationPosted: No notification parts found; ignore and return ParsedEmpty")
                 return NotificationParseResult.ParsedEmpty
             }
 

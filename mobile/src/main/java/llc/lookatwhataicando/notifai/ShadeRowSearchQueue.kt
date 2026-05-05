@@ -5,10 +5,6 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.smartfoo.android.core.logging.FooLog
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.ShadeRow
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.findContainerNode
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.findRawRowWithAppName
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.getLiveRowNodes
 
 /**
  * Serializes asynchronous notification shade row searches for [MyAccessibilityService].
@@ -23,7 +19,7 @@ import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.getLiveRowNodes
 internal class ShadeRowSearchQueue(
     private val delays: ShadeDelays,
     private val getWindows: () -> List<AccessibilityWindowInfo>?,
-    private val getLastSnapshot: () -> List<ShadeRow>,
+    private val getLastSnapshot: () -> List<NotificationShadeSnapshot.ShadeRow>,
     private val openShade: () -> Unit,
     private val closeShade: () -> Unit,
 ) {
@@ -37,14 +33,12 @@ internal class ShadeRowSearchQueue(
     /**
      * State for a single in-flight search for a notification row by app label.
      *
-     * @param appLabel             Human-readable label to match against [ShadeRow.appName].
+     * @param appLabel             Human-readable label to match against [NotificationShadeSnapshot.ShadeRow.appName].
      * @param callback             Invoked on the main thread with all found rows (or null if none).
      * @param shadeOpenedByUs      True if this search is responsible for closing the shade when done.
      *                             Transferred to the next queued search so the last one closes it.
      * @param readyToScan          False while waiting for the shade-open settle delay; true once the
-     *                             settle runnable fires and populates [rowsToExpand].
-     * @param rowsToExpand         Live row nodes queued for [AccessibilityNodeInfo.ACTION_CLICK] on
-     *                             their expand chevron. Populated after settle so nodes are fresh.
+     *                             settle runnable fires.
      * @param scrollAttemptsLeft   Remaining [AccessibilityNodeInfo.ACTION_SCROLL_FORWARD] calls
      *                             allowed before giving up on off-screen rows.
      * @param rowExpanded          True after we performed one expand on the target row, preventing
@@ -55,10 +49,9 @@ internal class ShadeRowSearchQueue(
      */
     private data class PendingRowSearch(
         val appLabel: String,
-        val callback: (List<ShadeRow>?) -> Unit,
+        val callback: (List<NotificationShadeSnapshot.ShadeRow>?) -> Unit,
         var shadeOpenedByUs: Boolean,
         var readyToScan: Boolean,
-        val rowsToExpand: MutableList<AccessibilityNodeInfo> = mutableListOf(),
         var scrollAttemptsLeft: Int = MAX_SCROLL_ATTEMPTS,
         var rowExpanded: Boolean = false,
         var settling: Boolean = false,
@@ -68,7 +61,7 @@ internal class ShadeRowSearchQueue(
     private val queue: ArrayDeque<PendingRowSearch> = ArrayDeque()
 
     /**
-     * Initiates a search for the shade row whose [ShadeRow.appName] matches [appLabel].
+     * Initiates a search for the shade row whose [NotificationShadeSnapshot.ShadeRow.appName] matches [appLabel].
      *
      * If another search is active, this one is queued and will start automatically when the
      * current one finishes ([finishSearch] hands the open shade to the next entry).
@@ -80,9 +73,9 @@ internal class ShadeRowSearchQueue(
     fun findRowForAppLabel(
         appLabel: String,
         shadeAlreadyOpen: Boolean,
-        callback: (List<ShadeRow>?) -> Unit,
+        callback: (List<NotificationShadeSnapshot.ShadeRow>?) -> Unit,
     ) {
-        FooLog.i(TAG, "findRowForAppLabel: appLabel=$appLabel shadeAlreadyOpen=$shadeAlreadyOpen queueSize=${queue.size}")
+        FooLog.i(TAG, "#ACCESSIBILITY findRowForAppLabel: appLabel=$appLabel shadeAlreadyOpen=$shadeAlreadyOpen queueSize=${queue.size}")
 
         val shadeIsOpen = shadeAlreadyOpen || queue.isNotEmpty()
         val search = PendingRowSearch(
@@ -93,7 +86,7 @@ internal class ShadeRowSearchQueue(
         )
 
         if (queue.isNotEmpty()) {
-            FooLog.i(TAG, "findRowForAppLabel: queuing $appLabel behind active search for ${queue.first().appLabel}")
+            FooLog.i(TAG, "#ACCESSIBILITY findRowForAppLabel: queuing $appLabel behind active search for ${queue.first().appLabel}")
             queue.addLast(search)
             return
         }
@@ -102,144 +95,165 @@ internal class ShadeRowSearchQueue(
 
         if (!shadeAlreadyOpen) {
             openShade()
-            // rowsToExpand intentionally NOT pre-populated: nodes before shade open are stale.
             mainHandler.postDelayed({
                 val s = queue.firstOrNull() ?: return@postDelayed
                 if (s !== search) return@postDelayed
-                s.rowsToExpand.addAll(getLiveRowNodes(getWindows()))
                 s.readyToScan = true
-                tryExpandNextRow(s)
+                selfAdvance(s)
             }, delays.shadeSettle)
         } else {
-            search.rowsToExpand.addAll(getLiveRowNodes(getWindows()))
-            tryExpandNextRow(search)
+            selfAdvance(search)
         }
     }
 
     /**
      * Called from [MyAccessibilityService.onAccessibilityEvent] after every snapshot update.
-     * Re-checks for a match, then tries the next expand or scroll as needed.
+     * Delegates to [selfAdvance] so that event-driven and timer-driven paths share one code path.
      */
-    fun advancePendingRowSearch(root: AccessibilityNodeInfo) {
+    fun advancePendingRowSearch() {
         val search = queue.firstOrNull() ?: return
-
-        // A settle window is in-flight (pre-/post-expand or post-scroll); ignore events until it clears.
         if (search.settling) return
+        selfAdvance(search)
+    }
+
+    /**
+     * Central state-machine advance. Called from event-driven [advancePendingRowSearch] AND
+     * proactively from every settle-timer callback so the search never stalls waiting for a
+     * passive accessibility event.
+     *
+     * Priority order:
+     * 1. If target app is in the snapshot and the row is collapsed, expand it (with optional
+     *    pre-expand pause), then re-enter to finish.
+     * 2. If target app is in the snapshot and expanded (or no expand needed), finish the search.
+     * 3. If no match yet, expand the next collapsed visible row to reveal more content.
+     * 4. When all visible rows are expanded, scroll and repeat.
+     * 5. When scroll is exhausted or fails, give up.
+     */
+    private fun selfAdvance(search: PendingRowSearch) {
+        if (!search.readyToScan) return
 
         val match = getLastSnapshot().firstOrNull { it.appName.equals(search.appLabel, ignoreCase = true) }
         if (match != null) {
             if (!search.rowExpanded) {
                 // The row may be a collapsed group summary. Expand it first so we capture all
-                // child notifications. ACTION_EXPAND is locale-agnostic and only present on the
-                // row node itself when it is actually collapsed — no child-row confusion.
-                val rawNode = findRawRowWithAppName(search.appLabel, getWindows())
-                val isCollapsed = rawNode?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND } == true
+                // child notifications. ACTION_EXPAND is locale-agnostic. We require EXPAND present
+                // AND COLLAPSE absent to avoid acting on transitional or ambiguous actionList state.
+                val rawNode = NotificationShadeSnapshot.findRawRowWithAppName(search.appLabel, getWindows())
+                val isCollapsed = rawNode?.actionList?.let { a ->
+                    a.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND } &&
+                    a.none { it.id == AccessibilityNodeInfo.ACTION_COLLAPSE }
+                } == true
                 if (isCollapsed) {
                     if (delays.preExpand > 0) {
-                        FooLog.v(TAG, "advancePendingRowSearch: pausing ${delays.preExpand}ms before expanding ${search.appLabel}")
+                        FooLog.v(TAG, "#ACCESSIBILITY selfAdvance: pausing ${delays.preExpand}ms before expanding ${search.appLabel}")
                         search.settling = true
                         mainHandler.postDelayed({
                             val s = queue.firstOrNull() ?: return@postDelayed
                             if (s !== search) return@postDelayed
                             s.settling = false
-                            val freshNode = findRawRowWithAppName(s.appLabel, getWindows())
-                            val freshIsCollapsed = freshNode?.actionList?.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND } == true
+                            val freshNode = NotificationShadeSnapshot.findRawRowWithAppName(s.appLabel, getWindows())
+                            val freshIsCollapsed = freshNode?.actionList?.let { a ->
+                                a.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND } &&
+                                a.none { it.id == AccessibilityNodeInfo.ACTION_COLLAPSE }
+                            } == true
                             if (freshIsCollapsed) {
-                                FooLog.v(TAG, "advancePendingRowSearch: now expanding ${s.appLabel}")
+                                FooLog.v(TAG, "#ACCESSIBILITY selfAdvance: now expanding ${s.appLabel}")
                                 freshNode!!.performAction(AccessibilityNodeInfo.ACTION_EXPAND)
                                 s.rowExpanded = true
                             }
+                            selfAdvance(s)
                         }, delays.preExpand)
                     } else {
-                        FooLog.v(TAG, "advancePendingRowSearch: expanding ${search.appLabel} before reading content")
+                        FooLog.v(TAG, "#ACCESSIBILITY selfAdvance: expanding ${search.appLabel} before reading content")
                         rawNode!!.performAction(AccessibilityNodeInfo.ACTION_EXPAND)
                         search.rowExpanded = true
+                        // Fast mode: snapshot may not yet reflect the expand. Let the next
+                        // accessibility event drive the re-check via advancePendingRowSearch.
                     }
                     return
                 }
             }
             val allMatches = getLastSnapshot().filter { it.appName.equals(search.appLabel, ignoreCase = true) }
-            FooLog.i(TAG, "advancePendingRowSearch: found ${search.appLabel} (${allMatches.size} rows)")
+            FooLog.i(TAG, "#ACCESSIBILITY selfAdvance: found ${search.appLabel} (${allMatches.size} rows)")
             finishSearch(allMatches)
             return
         }
 
-        // Don't attempt expand/scroll until the shade-open settle delay has fired.
-        if (!search.readyToScan) return
-
-        if (search.rowsToExpand.isNotEmpty()) {
-            tryExpandNextRow(search)
-        } else if (search.scrollAttemptsLeft > 0) {
-            val container = findContainerNode(root)
-            if (container != null && container.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) {
+        if (!tryExpandNextRow(search)) {
+            val container = NotificationShadeSnapshot.getLiveContainerNode(getWindows())
+            if (search.scrollAttemptsLeft > 0 && container != null &&
+                container.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) {
                 search.scrollAttemptsLeft--
-                FooLog.v(TAG, "advancePendingRowSearch: scrolled (${search.scrollAttemptsLeft} attempts left)")
+                FooLog.v(TAG, "#ACCESSIBILITY selfAdvance: scrolled (${search.scrollAttemptsLeft} attempts left)")
                 if (delays.scrollSettle > 0) {
                     search.settling = true
                     mainHandler.postDelayed({
                         val s = queue.firstOrNull() ?: return@postDelayed
                         if (s !== search) return@postDelayed
                         s.settling = false
-                        s.rowsToExpand.clear()
-                        s.rowsToExpand.addAll(getLiveRowNodes(getWindows()))
+                        selfAdvance(s)
                     }, delays.scrollSettle)
                 } else {
-                    search.rowsToExpand.addAll(getLiveRowNodes(getWindows()))
+                    selfAdvance(search)
                 }
             } else {
-                FooLog.i(TAG, "advancePendingRowSearch: scroll exhausted or container null — giving up on ${search.appLabel}")
+                FooLog.i(TAG, "#ACCESSIBILITY selfAdvance: scroll exhausted or container null — giving up on ${search.appLabel}")
                 finishSearch()
             }
-        } else {
-            FooLog.i(TAG, "advancePendingRowSearch: all rows tried, no match for ${search.appLabel}")
-            finishSearch()
         }
     }
 
     /**
-     * Pops the next row from [PendingRowSearch.rowsToExpand] and performs ACTION_EXPAND on it
-     * if it is collapsed (ACTION_EXPAND present in actionList). Locale-agnostic — no string
-     * matching. Already-expanded rows (ACTION_COLLAPSE present) are skipped silently.
+     * Re-fetches live row nodes and performs ACTION_EXPAND on the first collapsed row found.
+     * Locale-agnostic — detected via actionList (EXPAND present, COLLAPSE absent). Nodes are
+     * fetched fresh on every call; no stale references are held between async delays.
+     *
+     * Returns true if an expand was performed, false if all visible rows are already expanded
+     * (caller should scroll or give up). After any settle delay, proactively calls [selfAdvance]
+     * so the search advances without waiting for a passive accessibility event.
      */
-    private fun tryExpandNextRow(search: PendingRowSearch) {
-        while (search.rowsToExpand.isNotEmpty()) {
-            val row = search.rowsToExpand.removeAt(0)
-            val isCollapsed = row.actionList.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND }
-            if (isCollapsed) {
+    private fun tryExpandNextRow(search: PendingRowSearch): Boolean {
+        for (row in NotificationShadeSnapshot.getLiveRowNodes(getWindows())) {
+            val actions = row.actionList
+            if (actions.any { it.id == AccessibilityNodeInfo.ACTION_EXPAND } &&
+                actions.none { it.id == AccessibilityNodeInfo.ACTION_COLLAPSE }) {
                 val expanded = row.performAction(AccessibilityNodeInfo.ACTION_EXPAND)
-                FooLog.v(TAG, "tryExpandNextRow: ACTION_EXPAND result=$expanded for ${row.viewIdResourceName}")
+                FooLog.v(TAG, "#ACCESSIBILITY tryExpandNextRow: ACTION_EXPAND result=$expanded for ${row.viewIdResourceName}")
                 if (delays.preExpand > 0) {
                     search.settling = true
                     mainHandler.postDelayed({
                         val s = queue.firstOrNull() ?: return@postDelayed
                         if (s !== search) return@postDelayed
                         s.settling = false
+                        selfAdvance(s)
                     }, delays.preExpand)
                 }
-                return
+                return true
             }
-            // Row is already expanded — keep popping.
         }
-        val allMatches = getLastSnapshot().filter { it.appName.equals(search.appLabel, ignoreCase = true) }
-        if (allMatches.isNotEmpty()) {
-            FooLog.i(TAG, "tryExpandNextRow: match found without expanding for ${search.appLabel}")
-            finishSearch(allMatches)
-        }
-        // Otherwise wait for next event (scroll may still deliver more rows).
+        return false
     }
 
-    private fun finishSearch(results: List<ShadeRow> = emptyList()) {
+    private fun finishSearch(results: List<NotificationShadeSnapshot.ShadeRow> = emptyList()) {
         val search = queue.removeFirstOrNull() ?: return
         val nextSearch = queue.firstOrNull()
-        FooLog.i(TAG, "finishSearch: appLabel=${search.appLabel} rows=${results.size} queueRemaining=${queue.size}")
+        FooLog.i(TAG, "#ACCESSIBILITY finishSearch: appLabel=${search.appLabel} rows=${results.size} queueRemaining=${queue.size}")
 
         if (nextSearch != null) {
             // Hand the open shade to the next search immediately (no close/reopen cycle).
             // Transfer shade-close responsibility so the last search in the chain closes it.
             if (search.shadeOpenedByUs) nextSearch.shadeOpenedByUs = true
             nextSearch.readyToScan = true
-            nextSearch.rowsToExpand.addAll(getLiveRowNodes(getWindows()))
-            tryExpandNextRow(nextSearch)
+            // Defer selfAdvance to the next looper iteration so the accessibility tree has time
+            // to reflect the just-completed search's final expand (avoids stale ACTION_EXPAND
+            // on an already-expanded row being seen by the incoming search's first scan).
+            nextSearch.settling = true
+            mainHandler.post {
+                val s = queue.firstOrNull() ?: return@post
+                if (s !== nextSearch) return@post
+                s.settling = false
+                selfAdvance(s)
+            }
             search.callback(results.takeIf { it.isNotEmpty() })
         } else {
             val closeAndCallback = {
@@ -247,7 +261,7 @@ internal class ShadeRowSearchQueue(
                 search.callback(results.takeIf { it.isNotEmpty() })
             }
             if (delays.preClose > 0) {
-                FooLog.v(TAG, "finishSearch: holding shade open ${delays.preClose}ms for observation (DEBUG_SLOW_MODE)")
+                FooLog.v(TAG, "#ACCESSIBILITY finishSearch: holding shade open ${delays.preClose}ms for observation (DEBUG_SLOW_MODE)")
                 mainHandler.postDelayed(closeAndCallback, delays.preClose)
             } else {
                 closeAndCallback()

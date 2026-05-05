@@ -21,15 +21,10 @@ fun interface ObscuredNotificationSink {
  * at app startup via [ObscuredNotificationLogger.sink] = myFirebaseSink.
  */
 object ObscuredNotificationLogger {
-
     private val TAG = FooLog.TAG(ObscuredNotificationLogger::class)
 
     var sink: ObscuredNotificationSink = ObscuredNotificationSink { event ->
-        FooLog.i(
-            TAG,
-            "log: pkg=${event.packageName} app=${event.appLabel}" +
-                " outcome=${event.resolutionOutcome} flags=0x${event.notificationFlags.toString(16)}"
-        )
+        FooLog.i(TAG, "#OBSCURED log: pkg=${event.packageName} app=${event.appLabel} outcome=${event.resolutionOutcome} flags=0x${event.notificationFlags.toString(16)}")
     }
 
     fun log(event: ObscuredNotification) = sink.log(event)

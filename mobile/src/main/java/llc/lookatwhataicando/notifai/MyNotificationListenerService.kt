@@ -14,7 +14,6 @@ import com.smartfoo.android.core.logging.FooLog
 import com.smartfoo.android.core.notification.FooNotification
 import com.smartfoo.android.core.platform.FooPlatformUtils
 import com.smartfoo.android.core.texttospeech.FooTextToSpeechBuilder
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.ShadeRow
 import llc.lookatwhataicando.notifai.notification.NotificationParserUtils
 import llc.lookatwhataicando.notifai.notification.ObscuredNotification
 import llc.lookatwhataicando.notifai.notification.ObscuredNotificationLogger
@@ -267,13 +266,13 @@ class MyNotificationListenerService : NotificationListenerService() {
         cancelPendingLookup(packageName)
 
         val appLabel = FooPlatformUtils.getApplicationName(this, packageName) ?: packageName
-        FooLog.d(TAG, "schedulePendingLookup: packageName=$packageName appLabel=$appLabel delay=${PENDING_LOOKUP_DELAY_MS}ms")
+        FooLog.d(TAG, "#ACCESSIBILITY schedulePendingLookup: packageName=$packageName appLabel=$appLabel delay=${PENDING_LOOKUP_DELAY_MS}ms")
 
         val runnable = Runnable {
             pendingLookups.remove(packageName)
             val accessibility = MyAccessibilityService.instance
             if (accessibility == null) {
-                FooLog.w(TAG, "schedulePendingLookup: accessibility unavailable for $packageName")
+                FooLog.w(TAG, "#ACCESSIBILITY schedulePendingLookup: accessibility unavailable for $packageName")
                 ObscuredNotificationLogger.log(
                     ObscuredNotification(
                         packageName        = packageName,
@@ -306,7 +305,7 @@ class MyNotificationListenerService : NotificationListenerService() {
                     if (!rows.isNullOrEmpty()) {
                         speakShadeRows(appLabel, rows)
                     } else {
-                        FooLog.i(TAG, "schedulePendingLookup: no shade rows found for $appLabel")
+                        FooLog.i(TAG, "#ACCESSIBILITY schedulePendingLookup: no shade rows found for $appLabel")
                     }
                 }
             )
@@ -335,10 +334,10 @@ class MyNotificationListenerService : NotificationListenerService() {
     private fun cancelPendingLookup(packageName: String) {
         val runnable = pendingLookups.remove(packageName) ?: return
         handler.removeCallbacks(runnable)
-        FooLog.d(TAG, "cancelPendingLookup: cancelled pending accessibility lookup for $packageName")
+        FooLog.d(TAG, "#ACCESSIBILITY cancelPendingLookup: cancelled pending accessibility lookup for $packageName")
     }
 
-    private fun speakShadeRows(appLabel: String, rows: List<ShadeRow>) {
+    private fun speakShadeRows(appLabel: String, rows: List<NotificationShadeSnapshot.ShadeRow>) {
         val builder = FooTextToSpeechBuilder(appLabel)
         for (row in rows) {
             row.title?.let { builder.appendSilenceWordBreak(); builder.appendSpeech(it) }

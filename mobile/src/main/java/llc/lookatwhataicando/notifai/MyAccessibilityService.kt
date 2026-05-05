@@ -5,9 +5,6 @@ import android.annotation.SuppressLint
 import android.view.accessibility.AccessibilityEvent
 import androidx.annotation.RequiresApi
 import com.smartfoo.android.core.logging.FooLog
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.COM_ANDROID_SYSTEMUI
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.ShadeRow
-import llc.lookatwhataicando.notifai.NotificationShadeSnapshot.snapshotShade
 
 /**
  * ## Behavioral ground truth — when and why this service is needed
@@ -80,7 +77,8 @@ class MyAccessibilityService : AccessibilityService() {
          * distinct. Set false and confirm [ShadeDelays.FAST] values once minimum working delays
          * are known.
          */
-        private const val DEBUG_SLOW_MODE = true
+        @Suppress("SimplifyBooleanWithConstants", "KotlinConstantConditions")
+        var DEBUG_SLOW_MODE = false && BuildConfig.DEBUG
         val delays: ShadeDelays = if (DEBUG_SLOW_MODE) ShadeDelays.SLOW else ShadeDelays.FAST
 
         /**
@@ -88,7 +86,7 @@ class MyAccessibilityService : AccessibilityService() {
          * full top-to-bottom shade scan ([DebugShadeScan]) instead of the normal app-label
          * search. No TTS is spoken. Disable when switching back to the normal search path.
          */
-        const val DEBUG_FULL_SCAN_MODE = false
+        var DEBUG_FULL_SCAN_MODE = false
 
         private val ACCESSIBILITY_EVENTS_NOTIFICATION_RELEVANT = setOf(
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED,
@@ -141,31 +139,31 @@ class MyAccessibilityService : AccessibilityService() {
     // -------------------------------------------------------------------------
 
     override fun onCreate() {
-        FooLog.v(TAG, "onCreate()")
+        FooLog.v(TAG, "#ACCESSIBILITY onCreate()")
         super.onCreate()
     }
 
     override fun onDestroy() {
-        FooLog.v(TAG, "onDestroy()")
+        FooLog.v(TAG, "#ACCESSIBILITY onDestroy()")
         super.onDestroy()
         instance = null
     }
 
     override fun onServiceConnected() {
-        FooLog.v(TAG, "onServiceConnected()")
+        FooLog.v(TAG, "#ACCESSIBILITY onServiceConnected()")
         super.onServiceConnected()
         instance = this
     }
 
     override fun onInterrupt() {
-        FooLog.v(TAG, "onInterrupt()")
+        FooLog.v(TAG, "#ACCESSIBILITY onInterrupt()")
     }
 
     // -------------------------------------------------------------------------
     // Snapshot state + delegates
     // -------------------------------------------------------------------------
 
-    private var lastSnapshot: List<ShadeRow> = emptyList()
+    private var lastSnapshot: List<NotificationShadeSnapshot.ShadeRow> = emptyList()
 
     private val searchQueue = ShadeRowSearchQueue(
         delays          = delays,
@@ -186,7 +184,7 @@ class MyAccessibilityService : AccessibilityService() {
     fun findRowForAppLabel(
         appLabel: String,
         shadeAlreadyOpen: Boolean,
-        callback: (List<ShadeRow>?) -> Unit,
+        callback: (List<NotificationShadeSnapshot.ShadeRow>?) -> Unit,
     ) = searchQueue.findRowForAppLabel(appLabel, shadeAlreadyOpen, callback)
 
     fun debugFullShadeScan() = debugScan.debugFullShadeScan()
@@ -201,7 +199,7 @@ class MyAccessibilityService : AccessibilityService() {
         //
         // For privacy/security reasons we only process `com.android.systemui` events
         //
-        if (packageName != COM_ANDROID_SYSTEMUI) return
+        if (packageName != NotificationShadeSnapshot.COM_ANDROID_SYSTEMUI) return
 
         //
         // For privacy/security reasons we only process notification relevant events
@@ -211,27 +209,27 @@ class MyAccessibilityService : AccessibilityService() {
         val eventTypeName = AccessibilityEvent.eventTypeToString(event.eventType)
         val root = event.source?.window?.root ?: run {
             if (VERBOSE_LOG_ROOT_NULL) {
-                FooLog.v(TAG, "onAccessibilityEvent[$eventTypeName]: source window root is null")
+                FooLog.v(TAG, "#ACCESSIBILITY onAccessibilityEvent[$eventTypeName]: source window root is null")
             }
             return
         }
 
-        val snapshot = snapshotShade(eventTypeName, root)
+        val snapshot = NotificationShadeSnapshot.snapshotShade(eventTypeName, root)
         // Debounce (ignore) identical snapshot collections
         if (snapshot == lastSnapshot) return
         lastSnapshot = snapshot
 
         if (snapshot.isEmpty()) {
             if (VERBOSE_LOG_SHADE_EMPTY) {
-                FooLog.v(TAG, "onAccessibilityEvent[$eventTypeName]: shade snapshot (empty)")
+                FooLog.v(TAG, "#ACCESSIBILITY onAccessibilityEvent[$eventTypeName]: shade snapshot (empty)")
             }
         } else {
             val sb = StringBuilder()
-            sb.append("onAccessibilityEvent[$eventTypeName]: shade snapshot (${snapshot.size} rows):")
+            sb.append("#ACCESSIBILITY onAccessibilityEvent[$eventTypeName]: shade snapshot (${snapshot.size} rows):")
             snapshot.forEachIndexed { i, row -> sb.append("\n  [$i] $row") }
             FooLog.v(TAG, sb.toString())
         }
 
-        searchQueue.advancePendingRowSearch(root)
+        searchQueue.advancePendingRowSearch()
     }
 }
